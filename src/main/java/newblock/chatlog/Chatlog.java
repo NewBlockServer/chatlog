@@ -24,7 +24,7 @@ import java.util.Optional;
 @Plugin(
         id = "chatlog",
         name = "ChatLog",
-        version = "1.0.0",
+        version = "1.0.5",
         url = "https://newblock.top",
         authors = {"NewBlockTeam"}
 )
@@ -148,9 +148,13 @@ public class Chatlog {
                 logManager.logChat(serverName, playerName, message + " -> " + replaced);
 
                 if (config.isNotifyReplacement()) {
-                    Component notify = Component.text("[ChatLog] ", NamedTextColor.GOLD)
-                            .append(Component.text(langManager.getMessage("message.replaced"), NamedTextColor.YELLOW));
-                    player.sendMessage(notify);
+                    String replacedMsg = langManager.getMessage("message.replaced");
+                    // 只有当消息不为 null 时才发送（为空字符串表示关闭该消息）
+                    if (replacedMsg != null) {
+                        Component notify = Component.text(config.getPrefix() + " ", NamedTextColor.GOLD)
+                                .append(Component.text(replacedMsg, NamedTextColor.YELLOW));
+                        player.sendMessage(notify);
+                    }
                 }
                 return;
             }

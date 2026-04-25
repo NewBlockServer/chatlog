@@ -1,6 +1,7 @@
 package newblock.chatlog;
 
 import org.slf4j.Logger;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -22,11 +23,13 @@ public class ChatlogConfig {
     private final File filterFile;
 
     // 配置项
+    private String prefix;                          // 插件消息前缀
     private String punishmentCommand;               // 聊天内容违禁词处罚命令
     private List<String> checkCommands;             // 要检测并记录的命令名列表
     private boolean userNameCheck;                  // 是否开启"用户名检测"
     private String userNamePunishmentCommand;       // 用户名检测违规时执行的命令模板
     private boolean notifyReplacement;              // 是否通知玩家消息被替换
+    private String replaceWith;                     // 违禁词替换字符串
 
     /**
      * 创建配置管理器
@@ -40,10 +43,12 @@ public class ChatlogConfig {
         this.filterFile = new File(pluginDir, "filter.yml");
 
         // 初始化默认值
+        this.prefix = "[ChatLog]";
         this.punishmentCommand = "/tempmute %player% 10m 言语违规";
         this.checkCommands = new ArrayList<>();
         this.userNameCheck = false;
         this.userNamePunishmentCommand = "kick %player% 用户名违规";
+        this.replaceWith = "***";
 
         // 创建配置文件（如果不存在）
         createConfigIfNotExists();
@@ -56,8 +61,11 @@ public class ChatlogConfig {
     private void createConfigIfNotExists() {
         if (!configFile.exists()) {
             String defaultConfig = ""
+                    + "# 插件消息前缀，可自定义修改\n"
+                    + "Prefix: \"[ChatLog]\"\n"
+                    + "\n"
                     + "# 原有：检测聊天内容违禁词时执行的命令模板\n"
-                    + "punishment-command: \"/tempmute %player% 10m 言语违规\"\n"
+                    + "punishment-command: \"tempmute %player% 1m 您发送的聊天信息可能存在违规\"\n"
                     + "\n"
                     + "# 新增：要检测并记录的命令列表，去掉前导斜杠\n"
                     + "CheckCommands:\n"
@@ -69,14 +77,18 @@ public class ChatlogConfig {
                     + "  - 'pc'\n"
                     + "  - 'f'\n"
                     + "\n"
-                    + "# 新增：是否检测用户名，若为 true，则玩家发送聊天或命令时会先检查用户名是否含违禁词。\n"
+                    + "# 是否检测用户名，若为 true，则玩家发送聊天或命令时会先检查用户名是否含违禁词。\n"
                     + "UserNameCheck: true\n"
                     + "\n"
-                    + "# 新增：用户名违规时执行的命令模板，%player% 会被替换为实际玩家名\n"
+                    + "# 用户名违规时执行的命令模板，%player% 会被替换为实际玩家名\n"
                     + "UserName-punishment-command: \"kick %player% 您的用户名包含违禁词请更换用户名\"\n"
                     + "\n"
-                    + "# 新增：是否通知玩家消息被替换\n"
-                    + "NotifyReplacement: true\n";
+                    + "# 是否通知玩家消息被替换\n"
+                    + "NotifyReplacement: true\n"
+                    + "\n"
+                    + "# 违禁词替换字符串，默认为***\n"
+                    + "# 注意：检测到 filter_replace.yml 中的违禁词后，整段话将被替换为此字符串\n"
+                    + "ReplaceWith: '***'\n";
             try {
                 Files.write(configFile.toPath(), defaultConfig.getBytes());
                 logger.info("已生成默认 config.yml，请根据需求修改各项配置");
@@ -110,21 +122,31 @@ public class ChatlogConfig {
      */
     @SuppressWarnings("unchecked")
     public void loadConfig() {
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         try (InputStream in = new FileInputStream(configFile)) {
             Map<String, Object> data = yaml.load(in);
 
-            // 1. 原有：读取 punishment-command
+            // 1. 读取 Prefix
+            Object prefixObj = data.get("Prefix");
+            if (prefixObj != null) {
+                prefix = prefixObj.toString().trim();
+                logger.info("已加载 Prefix: {}", prefix);
+            } else {
+                prefix = "[ChatLog]";
+                logger.warn("config.yml 中未找到 Prefix，使用默认: {}", prefix);
+            }
+
+            // 2. 原有：读取 punishment-command
             Object cmdObj = data.get("punishment-command");
             if (cmdObj != null) {
                 punishmentCommand = cmdObj.toString().trim();
                 logger.info("已加载 punishment-command: {}", punishmentCommand);
             } else {
-                punishmentCommand = "/tempmute %player% 10m 言语违规";
+                punishmentCommand = "tempmute %player% 10m 言语违规";
                 logger.warn("config.yml 中未找到 punishment-command，使用默认: {}", punishmentCommand);
             }
 
-            // 2. 新增：读取 CheckCommands 列表
+            // 3. 新增：读取 CheckCommands 列表
             Object checkCmdsObj = data.get("CheckCommands");
             checkCommands = new ArrayList<>();
             if (checkCmdsObj instanceof List) {
@@ -136,7 +158,7 @@ public class ChatlogConfig {
                 logger.warn("config.yml 中未找到 CheckCommands，默认不检测任何命令");
             }
 
-            // 3. 新增：读取 UserNameCheck
+            // 4. 新增：读取 UserNameCheck
             Object unameCheckObj = data.get("UserNameCheck");
             if (unameCheckObj != null) {
                 userNameCheck = Boolean.parseBoolean(unameCheckObj.toString());
@@ -146,7 +168,7 @@ public class ChatlogConfig {
             }
             logger.info("UserNameCheck: {}", userNameCheck);
 
-            // 4. 新增：读取 UserName-punishment-command
+            // 5. 新增：读取 UserName-punishment-command
             Object unamePunishObj = data.get("UserName-punishment-command");
             if (unamePunishObj != null) {
                 userNamePunishmentCommand = unamePunishObj.toString().trim();
@@ -156,14 +178,44 @@ public class ChatlogConfig {
                 logger.warn("config.yml 中未找到 UserName-punishment-command，使用默认: {}", userNamePunishmentCommand);
             }
 
+            // 6. 新增：读取 NotifyReplacement
+            Object notifyObj = data.get("NotifyReplacement");
+            if (notifyObj != null) {
+                notifyReplacement = Boolean.parseBoolean(notifyObj.toString());
+            } else {
+                notifyReplacement = true;
+            }
+            logger.info("NotifyReplacement: {}", notifyReplacement);
+
+            // 7. 新增：读取 ReplaceWith
+            Object replaceWithObj = data.get("ReplaceWith");
+            if (replaceWithObj != null) {
+                replaceWith = replaceWithObj.toString();
+                logger.info("已加载 ReplaceWith: {}", replaceWith);
+            } else {
+                replaceWith = "***";
+                logger.warn("config.yml 中未找到 ReplaceWith，使用默认: {}", replaceWith);
+            }
+
         } catch (IOException e) {
             // 若读取失败，则使用默认值
-            punishmentCommand = "/tempmute %player% 10m 言语违规";
+            prefix = "[ChatLog]";
+            punishmentCommand = "tempmute %player% 10m 言语违规";
             checkCommands = new ArrayList<>();
             userNameCheck = false;
             userNamePunishmentCommand = "kick %player% 用户名违规";
+            notifyReplacement = true;
+            replaceWith = "***";
             logger.error("读取 config.yml 时发生错误，使用默认配置", e);
         }
+    }
+
+    /**
+     * 获取插件消息前缀
+     * @return 前缀字符串
+     */
+    public String getPrefix() {
+        return prefix;
     }
 
     /**
@@ -208,5 +260,13 @@ public class ChatlogConfig {
 
     public boolean isNotifyReplacement() {
         return notifyReplacement;
+    }
+
+    /**
+     * 获取违禁词替换字符串
+     * @return 替换字符串
+     */
+    public String getReplaceWith() {
+        return replaceWith;
     }
 }

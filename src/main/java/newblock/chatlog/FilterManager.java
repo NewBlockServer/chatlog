@@ -35,7 +35,7 @@ public class FilterManager {
         this.config = config;
         this.forbiddenPatterns = new ArrayList<>();
         this.replacePatterns = new ArrayList<>();
-        this.replaceWith = "*";
+        this.replaceWith = "***";
         this.hasReplaceConfig = false;
         loadFilters();
     }
@@ -80,7 +80,7 @@ public class FilterManager {
         }
         
         this.hasReplaceConfig = true;
-        this.replaceWith = replaceConfig.getReplaceWith();
+        this.replaceWith = config.getReplaceWith();
         this.replacePatterns.clear();
         
         for (String pattern : replaceConfig.getReplacePatterns()) {
@@ -91,7 +91,7 @@ public class FilterManager {
             }
         }
         
-        logger.info("已加载 {} 个替换正则表达式", replacePatterns.size());
+        logger.info("已加载 {} 个替换正则表达式，替换字符串: {}", replacePatterns.size(), replaceWith);
     }
 
     /**
@@ -111,6 +111,7 @@ public class FilterManager {
 
     /**
      * 替换文本中的违禁词
+     * 注意：如果检测到违禁词，整段话将被替换为配置的字符串
      *
      * @param text 原始文本
      * @return 替换后的文本，如果没有替换则返回null
@@ -120,45 +121,16 @@ public class FilterManager {
             return null;
         }
         
-        String result = text;
-        boolean replaced = false;
-        
+        // 检查是否包含任何违禁词
         for (Pattern pattern : replacePatterns) {
-            StringBuffer sb = new StringBuffer();
-            Matcher matcher = pattern.matcher(result);
-            
-            while (matcher.find()) {
-                replaced = true;
-                String replacement = generateReplacement(matcher.group().length());
-                matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+            Matcher matcher = pattern.matcher(text);
+            if (matcher.find()) {
+                // 只要检测到违禁词，就将整段话替换为配置的字符串
+                return replaceWith;
             }
-            matcher.appendTail(sb);
-            
-            result = sb.toString();
         }
         
-        return replaced ? result : null;
-    }
-    
-    /**
-     * 生成指定长度的替换字符串
-     *
-     * @param length 原始字符串长度
-     * @return 替换字符串
-     */
-    private String generateReplacement(int length) {
-        // 如果替换字符是单个字符，直接重复它
-        if (replaceWith.length() == 1) {
-            return replaceWith.repeat(length);
-        } else {
-            // 否则，创建一个足够长的替换字符串
-            StringBuilder sb = new StringBuilder();
-            while (sb.length() < length) {
-                sb.append(replaceWith);
-            }
-            // 截断到正确的长度
-            return sb.substring(0, length);
-        }
+        return null;
     }
     
     /**

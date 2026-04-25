@@ -1,6 +1,7 @@
 package newblock.chatlog;
 
 import org.slf4j.Logger;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -41,6 +42,7 @@ public class LangManager {
         if (!langFile.exists()) {
             String defaultLang = ""
                     + "# ChatLog 语言配置文件\n"
+                    + "# 提示：如果某条消息的值设置为空字符串（如 \"\"），则该消息将被关闭，不会显示\n"
                     + "\n"
                     + "# 插件消息\n"
                     + "plugin:\n"
@@ -70,7 +72,9 @@ public class LangManager {
                     + "\n"
                     + "# 消息替换提示\n"
                     + "message:\n"
-                    + "  replaced: \"您的消息中包含敏感词，已被自动替换\"\n";
+                    + "  replaced: \"您的消息中包含敏感词，已被自动替换\"\n"
+                    + "  # 示例：如果不想显示替换提示，可以设置为空字符串\n"
+                    + "  # replaced: \"\"\n";
 
             try {
                 Files.write(langFile.toPath(), defaultLang.getBytes());
@@ -87,7 +91,7 @@ public class LangManager {
     @SuppressWarnings("unchecked")
     public void loadLang() {
         messages.clear();
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
 
         try (InputStream in = new FileInputStream(langFile)) {
             Map<String, Object> data = yaml.load(in);
@@ -118,10 +122,16 @@ public class LangManager {
      *
      * @param key 消息key
      * @param args 替换参数
-     * @return 格式化后的消息
+     * @return 格式化后的消息，如果消息为空字符串则返回 null（表示关闭该消息）
      */
     public String getMessage(String key, Object... args) {
         String message = messages.getOrDefault(key, key);
+        
+        // 如果消息为空字符串，返回 null 表示关闭该消息
+        if (message.isEmpty()) {
+            return null;
+        }
+        
         for (int i = 0; i < args.length; i++) {
             message = message.replace("{" + i + "}", String.valueOf(args[i]));
         }

@@ -1,19 +1,16 @@
 package newblock.chatlog;
 
 import org.slf4j.Logger;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.FileReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 管理违禁词替换配置
@@ -22,7 +19,6 @@ public class FilterReplaceConfig {
     private final Logger logger;
     private final File configFile;
     private List<String> replacePatterns;
-    private String replaceWith;
 
     /**
      * 创建违禁词替换配置管理器
@@ -34,7 +30,6 @@ public class FilterReplaceConfig {
         this.logger = logger;
         this.configFile = new File(pluginDir, "filter_replace.yml");
         this.replacePatterns = new ArrayList<>();
-        this.replaceWith = "*";
         createDefaultConfig();
         loadConfig();
     }
@@ -46,14 +41,11 @@ public class FilterReplaceConfig {
         if (!configFile.exists()) {
             String defaultConfig = ""
                     + "# ChatLog 违禁词替换配置\n"
-                    + "\n"
-                    + "# 替换为的字符，默认为*\n"
-                    + "replace_with: '*'\n"
-                    + "\n"
-                    + "# 需要替换的违禁词正则表达式列表\n"
-                    + "# 每行一个正则表达式\n"
-                    + "patterns:\n"
-                    + "  - 'cnm'\n";
+                    + "# 每行一个违禁词正则表达式\n"
+                    + "# 空行和以#开头的行会被忽略\n"
+                    + "# 注意：检测到违禁词后，整段话将被替换为 config.yml 中配置的 ReplaceWith 字符串\n"
+                    + "# 示例：\n"
+                    + "cnm\n";
 
             try {
                 Files.write(configFile.toPath(), defaultConfig.getBytes());
@@ -67,42 +59,31 @@ public class FilterReplaceConfig {
     /**
      * 加载配置
      */
-    @SuppressWarnings("unchecked")
     public void loadConfig() {
         replacePatterns.clear();
-        Yaml yaml = new Yaml(new SafeConstructor());
 
-        try (InputStream in = new FileInputStream(configFile)) {
-            Map<String, Object> data = yaml.load(in);
-
-            // 加载替换字符
-            if (data.containsKey("replace_with")) {
-                replaceWith = String.valueOf(data.get("replace_with"));
-            }
-
-            // 加载替换模式
-            if (data.containsKey("patterns")) {
-                Object patternsObj = data.get("patterns");
-                if (patternsObj instanceof List) {
-                    List<String> patterns = (List<String>) patternsObj;
-                    for (String pattern : patterns) {
-                        if (pattern != null && !pattern.trim().isEmpty()) {
-                            try {
-                                // 预编译检查正则表达式的有效性
-                                Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
-                                replacePatterns.add(pattern.trim());
-                            } catch (PatternSyntaxException e) {
-                                logger.error("无效的替换正则表达式: {}", pattern, e);
-                            }
-                        }
-                    }
-                    logger.info("已加载 {} 个有效的替换正则表达式", replacePatterns.size());
-                } else {
-                    logger.error("patterns配置项必须是一个列表");
+        try (BufferedReader reader = new BufferedReader(new FileReader(configFile))) {
+            String line;
+            
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                
+                // 忽略空行或注释
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
                 }
-            } else {
-                logger.warn("未找到patterns配置项，替换列表将为空");
+                
+                // 添加违禁词正则表达式
+                try {
+                    // 预编译检查正则表达式的有效性
+                    Pattern.compile(line, Pattern.CASE_INSENSITIVE);
+                    replacePatterns.add(line);
+                } catch (PatternSyntaxException e) {
+                    logger.error("无效的替换正则表达式: {}", line, e);
+                }
             }
+            
+            logger.info("已加载 {} 个有效的替换正则表达式", replacePatterns.size());
         } catch (IOException e) {
             logger.error("读取 filter_replace.yml 时发生错误", e);
         }
@@ -113,12 +94,5 @@ public class FilterReplaceConfig {
      */
     public List<String> getReplacePatterns() {
         return replacePatterns;
-    }
-
-    /**
-     * 获取替换字符
-     */
-    public String getReplaceWith() {
-        return replaceWith;
     }
 }
